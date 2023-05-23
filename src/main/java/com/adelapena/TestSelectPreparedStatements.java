@@ -5,6 +5,8 @@ import java.util.Objects;
 
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.CqlSessionBuilder;
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
+import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 import com.datastax.oss.driver.api.core.data.UdtValue;
@@ -19,17 +21,24 @@ public class TestSelectPreparedStatements
 
     public static void main(String[] args)
     {
+        DriverConfigLoader loader =
+                DriverConfigLoader.programmaticBuilder()
+                                  .withString(DefaultDriverOption.PROTOCOL_VERSION, "DSE_V2") // V4 and DSE_V1 hit the failure
+                                  .build();
+
         CqlSessionBuilder builder = new CqlSessionBuilder();
 
-        try (CqlSession session = builder.build())
+        try (CqlSession session = builder.withConfigLoader(loader).build())
         {
+            System.out.println("Protocol version: " + session.getContext().getProtocolVersion());
+
             session.execute(SimpleStatement.newInstance(format("DROP KEYSPACE IF EXISTS %s", KEYSPACE)).setTimeout(Duration.ofMinutes(1)));
             session.execute(SimpleStatement.newInstance(format("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}", KEYSPACE)).setTimeout(Duration.ofMinutes(1)));
             session.execute(SimpleStatement.newInstance(format("CREATE TYPE %s.%s (a int, b int)", KEYSPACE, UDT)).setTimeout(Duration.ofMinutes(1)));
             session.execute(SimpleStatement.newInstance(format("CREATE TABLE %s.%s (k int, c int, v %s, PRIMARY KEY(k, c))", KEYSPACE, TABLE, UDT)).setTimeout(Duration.ofMinutes(1)));
 
             // Prepare a SELECT query
-            PreparedStatement select = session.prepare(SimpleStatement.newInstance(format("SELECT * FROM %s.%s WHERE k = ?", KEYSPACE, TABLE)));
+            PreparedStatement select = session.prepare(SimpleStatement.newInstance(format("SELECT v FROM %s.%s WHERE k = ?", KEYSPACE, TABLE)));
 
             // Alter the type
             session.execute(SimpleStatement.newInstance(format("ALTER TYPE %s.%s ADD c int", KEYSPACE, UDT)).setTimeout(Duration.ofMinutes(1)));
